@@ -1,6 +1,28 @@
 #include <Encoder.h>
 #include <Servo.h>
 
+typedef union
+{
+ float val;
+ uint8_t bytes[4];
+} FLOATUNION;
+
+typedef union
+{
+ short val;
+ uint8_t bytes[2];
+} SHORTUNION;
+
+typedef union
+{
+ uint32_t val;
+ uint8_t bytes[4];
+} INTUNION;
+
+FLOATUNION fu;
+SHORTUNION su;
+INTUNION iu;
+
 // Pin definitions
 #define led_r 0
 #define led_g A3
@@ -24,6 +46,19 @@ Encoder enc(enc_a, enc_b);
 // Motor State
 uint8_t pwm =  0;
 boolean forward = true;
+float ilim = 100;
+uint16_t rpm;
+boolean isPID = false;
+float current;
+boolean brake = true;
+uint16_t coast_speed = 100;
+uint8_t fault = 0;
+
+// PID State
+float Kp;
+float Kd;
+float Ki;
+uint16_t target_rpm;
 
 // SPI state
 boolean hasbyte = false;
@@ -51,10 +86,12 @@ long encPos = 0;
 #define FID_CSPD      0x0D  // Set Coast Speed
 #define FID_STOP      0x0E  // Stop Motor
 #define FID_FAULT     0x0F  // Get Motor Fault
-#define FID_SETANG    0x10  // Set Servo Angle
-#define FID_SETSSP    0x11  // Set Continuous Servo Speed
-#define FID_TCURR     0x12  // Get Total Current
-#define FID_SETPRR    0x13  // Set PPR for Motor
+#define FID_SETANG1   0x10  // Set Servo Angle (Servo 1)
+#define FID_SETSSP1   0x11  // Set Continuous Servo Speed (Servo 1)
+#define FID_SETANG2   0x12  // Set Servo Angle (Servo 2)
+#define FID_SETSSP2   0x13  // Set Continuous Servo Speed (Servo 2)
+#define FID_TCURR     0x14  // Get Total Current
+#define FID_SETPRR    0x15  // Set PPR for Motor
 
 // LED Constants
 #define LED_RED 1
@@ -63,7 +100,7 @@ long encPos = 0;
 
 // Current Packet Data
 uint8_t fid;      // Function ID
-uint8_t scid;     // Subcomponent ID
+uint8_t cid;      // Subcomponent ID
 uint8_t nparams;  // Num Parameters
 uint8_t params[30];
 uint8_t header;
@@ -71,9 +108,8 @@ uint8_t packet;
 
 // Bit Masks
 // Masks for extracting relevant data
-#define subcomponentId_mask 0b00000001
-#define parameterQty_mask   0b00001110
-#define functionId_mask     0b11110000
+#define componentId_mask    0b00000111
+#define functionId_mask     0b11111000
 
 void setup() {
 
@@ -118,22 +154,16 @@ void setup() {
 void loop() {
   if(hasbyte) {
     setLED(LED_BLUE);
-    header = data[ridx];
-    ridx++;
-    if(ridx == 100) ridx = 0;
+    
+    header = readData();
 
     // Extract header data
-    fid = (functionId_mask & header) >> 4;
-    scid = subcomponentId_mask & header;
-    nparams = (parameterQty_mask & header) >> 1;
-
-    if(fid == 0) setLED(LED_RED);
+    fid = (functionId_mask & header) >> 3;
+    cid = (componentId_mask & header);
 
     // Extract all parameters
     for (int i = 0; i < nparams; i++) {
-      params[i] = data[ridx];
-      ridx++;
-      if(ridx == 100) ridx = 0;
+      params[i] = readData();
     }
 
     // Run function
@@ -141,15 +171,87 @@ void loop() {
       case FID_SETPWM: {
         pwm = params[0];
         drivePWM();
-        break;
-      }
+        break; }
+      case FID_SETILIM: {
+        ilim = (((double)(getShort(params[0], params[1]))) / 1000.0);
+        break; }
+      case FID_GETSPD: {
+        sendShort(rpm);
+        break; }
+      case FID_PIDEN: {
+        isPID = params[0];
+        break; }
+      case FID_GETCUR: {
+        sendShort((uint16_t)(current * 1000));
+        break; }
+      case FID_SETPID: {
+        Kp = getFloat(params[0], params[1], params[2], params[3]);
+        Kd = getFloat(params[4], params[5], params[6], params[7]);
+        Ki = getFloat(params[8], params[9], params[10], params[11]);
+        break; }
+      case FID_SETSPD: {
+        forward = (boolean) params[2];
+        target_rpm = getShort(params[0], params[1]);
+        break; }
+      case FID_RESENC: {
+        enc.write(0);
+        break; }
+      case FID_GETENC: {
+        sendInt(encPos);
+        break; }
+      case FID_ROTPWM: {
+        isPID = false;
+        forward = params[1];
+        pwm = params[0];
+        rotatePWM(getFloat(params[2], params[3], params[4], params[5]));
+        break; }
+      case FID_ROTSPD: {
+        isPID = true;
+        forward = params[2];
+        target_rpm = getShort(params[0], params[1]);
+        rotateRPM(getFloat(params[3], params[4], params[5], params[6]));
+        break; }
+      case FID_COAST: {
+        brake = false;
+        break; }
+      case FID_BRAKE: {
+        brake = true;
+        break; }
+      case FID_CSPD: {
+        coast_speed = getShort(params[0], params[1]);
+        break; }
+      case FID_STOP: {
+        stopMotor();
+        break; }
+      case FID_FAULT: {
+        Serial.write(fault);
+        break; }
+      case FID_SETANG1: {
+        servo1.write(params[0]);
+        break; }
+      case FID_SETANG2: {
+        servo2.write(params[0]);
+        break; }
+      case FID_SETSSP1: {
+        servo1.write(params[0]);
+        break; }
+      case FID_SETSSP2: {
+        servo2.write(params[0]);
+        break; }
     }
     
     hasbyte = false;
   }
   
   updateExternalLED();
-  encPos = enc.read();
+  encPos = (uint32_t) enc.read();
+}
+
+uint8_t readData() {
+  uint8_t val = data[ridx];
+  ridx++;
+  if(ridx == 100) ridx = 0;
+  return val;
 }
 
 // SPI Interrupt Control
@@ -204,3 +306,50 @@ void updateExternalLED() {
   }
 }
 
+void rotatePWM(float numrots) {
+  
+}
+
+void rotateRPM(float numrots) {
+  
+}
+
+void stopMotor() {
+  
+}
+
+void sendShort(uint16_t val) {
+  su.val = val;
+  Serial.write(su.bytes[0]);
+  Serial.write(su.bytes[1]);
+}
+
+void sendFloat(float val) {
+  fu.val = val;
+  Serial.write(fu.bytes[0]);
+  Serial.write(fu.bytes[1]);
+  Serial.write(fu.bytes[2]);
+  Serial.write(fu.bytes[3]);
+}
+
+void sendInt(int val) {
+  iu.val = val;
+  Serial.write(iu.bytes[0]);
+  Serial.write(iu.bytes[1]);
+  Serial.write(iu.bytes[2]);
+  Serial.write(iu.bytes[3]);
+}
+
+float getFloat(uint8_t p1, uint8_t p2, uint8_t p3, uint8_t p4) {
+  fu.bytes[0] = p1;
+  fu.bytes[1] = p2;
+  fu.bytes[2] = p3;
+  fu.bytes[3] = p4;
+  return fu.val;
+}
+
+uint16_t getShort(uint8_t p1, uint8_t p2) {
+  su.bytes[0] = p1;
+  su.bytes[1] = p2;
+  return su.val;
+}
