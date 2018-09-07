@@ -153,7 +153,7 @@ void setup() {
 
 void loop() {
   if(hasbyte) {
-    //setLED(LED_BLUE);
+    setLED(LED_BLUE);
     
     header = readData();
 
@@ -171,7 +171,7 @@ void loop() {
     }
 
     //if(params[0] == 0) setLED(LED_RED);
-    if(params[0] == 128) setLED(LED_BLUE);
+    if(params[0] == 128) setLED(LED_RED);
 
     // Run function
     switch(fid) {
