@@ -153,7 +153,7 @@ void setup() {
 
 void loop() {
   if(hasbyte) {
-    setLED(LED_BLUE);
+    //setLED(LED_BLUE);
     
     header = readData();
 
@@ -161,15 +161,23 @@ void loop() {
     fid = (functionId_mask & header) >> 3;
     cid = (componentId_mask & header);
 
+    //delayMicroseconds(1000);
+    nparams = readData();
+
     // Extract all parameters
     for (int i = 0; i < nparams; i++) {
+      //delayMicroseconds(1000);
       params[i] = readData();
     }
+
+    //if(params[0] == 0) setLED(LED_RED);
+    if(params[0] == 128) setLED(LED_BLUE);
 
     // Run function
     switch(fid) {
       case FID_SETPWM: {
         pwm = params[0];
+        forward = (boolean) params[1];
         drivePWM();
         break; }
       case FID_SETILIM: {
@@ -263,6 +271,7 @@ ISR (SPI_STC_vect)
   if(idx == 100) idx = 0;
   hasbyte = true;
 }
+
 
 void drivePWM() {
   if(forward) {
