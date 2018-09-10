@@ -62,6 +62,9 @@ uint16_t target_rpm;
 
 // SPI state
 boolean hasbyte = false;
+boolean hasPacket = false;
+uint8_t numbytes = 999;
+uint8_t curbyte = 0;
 uint8_t data[100];
 uint8_t idx = 0;
 uint8_t ridx = 0;
@@ -152,10 +155,9 @@ void setup() {
 }
 
 void loop() {
-  if(hasbyte) {
-    setLED(LED_BLUE);
-    
+  if(hasPacket) {
     header = readData();
+    setLED(LED_RED);
 
     // Extract header data
     fid = (functionId_mask & header) >> 3;
@@ -164,14 +166,17 @@ void loop() {
     //delayMicroseconds(1000);
     nparams = readData();
 
+    //uint8_t checksum = header + nparams * 10;
+
     // Extract all parameters
     for (int i = 0; i < nparams; i++) {
       //delayMicroseconds(1000);
       params[i] = readData();
+      //checksum += params[i] % 10;
     }
-
-    //if(params[0] == 0) setLED(LED_RED);
-    if(params[0] == 128) setLED(LED_RED);
+    
+    //uint8_t check = readData();
+    //if(check == checksum) {
 
     // Run function
     switch(fid) {
@@ -247,9 +252,20 @@ void loop() {
         servo2.write(params[0]);
         break; }
     }
+   // }
     
-    hasbyte = false;
+    hasPacket = false;
   }
+
+  /*if(curbyte == 2) {
+    numbytes = data[idx] + 2;
+  }
+
+  if(curbyte == numbytes) {
+    hasPacket = true;
+    curbyte == 0;
+    numbytes == 999;
+  }*/
   
   updateExternalLED();
   encPos = (uint32_t) enc.read();
@@ -258,7 +274,7 @@ void loop() {
 uint8_t readData() {
   uint8_t val = data[ridx];
   ridx++;
-  if(ridx == 100) ridx = 0;
+  if(ridx == 1000) ridx = 0;
   return val;
 }
 
@@ -268,10 +284,18 @@ ISR (SPI_STC_vect)
   // Save received byte, set flag
   data[idx] = SPDR;
   idx++;
-  if(idx == 100) idx = 0;
-  hasbyte = true;
+  if(idx == 1000) idx = 0;
+  hasPacket = true;
+  //curbyte++;
+  //if(curbyte == 2) {
+  // numbytes = data[idx] + 2;
+  //}
+  //if(curbyte == numbytes) {
+  //  hasPacket = true;
+  //  curbyte == 0;
+  //  numbytes == 999;
+  //}
 }
-
 
 void drivePWM() {
   if(forward) {
