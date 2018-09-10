@@ -65,9 +65,9 @@ boolean hasbyte = false;
 boolean hasPacket = false;
 uint8_t numbytes = 999;
 uint8_t curbyte = 0;
-uint8_t data[100];
-uint8_t idx = 0;
-uint8_t ridx = 0;
+uint8_t data[1000];
+int idx = 0;
+int ridx = 0;
 
 // Encoder variables
 long encPos = 0;
@@ -100,6 +100,7 @@ long encPos = 0;
 #define LED_RED 1
 #define LED_GREEN 2
 #define LED_BLUE 3
+#define LED_WHITE 4
 
 // Current Packet Data
 uint8_t fid;      // Function ID
@@ -108,6 +109,8 @@ uint8_t nparams;  // Num Parameters
 uint8_t params[30];
 uint8_t header;
 uint8_t packet;
+
+boolean goodtogo = false;
 
 // Bit Masks
 // Masks for extracting relevant data
@@ -120,7 +123,7 @@ void setup() {
   pinMode(led_r, OUTPUT);
   pinMode(led_g, OUTPUT);
   pinMode(led_b, OUTPUT);
-  setLED(LED_GREEN);
+  setLED(LED_WHITE);
 
   // Initialize external LED to off
   pinMode(red_ext, OUTPUT);
@@ -152,12 +155,22 @@ void setup() {
   // Set SPI mode to slave
   SPCR |= _BV(SPE);
   SPCR |= _BV(SPIE);
+
+ // for(int i = 0; i < 255; i++) {
+ //   digitalWrite(pwm1, 0);
+ //   analogWrite(pwm2, i);
+ //   delay(250);
+ // }
+
+  //delay(5000);
 }
 
 void loop() {
-  if(hasPacket) {
+  if((idx - ridx) > 5) {
+    //hasPacket = false;
     header = readData();
-    setLED(LED_RED);
+   // delay(250);
+    //setLED(LED_RED);
 
     // Extract header data
     fid = (functionId_mask & header) >> 3;
@@ -174,14 +187,14 @@ void loop() {
       params[i] = readData();
       //checksum += params[i] % 10;
     }
-    
-    //uint8_t check = readData();
+
     //if(check == checksum) {
 
     // Run function
     switch(fid) {
       case FID_SETPWM: {
         pwm = params[0];
+        if(pwm == 0) setLED(LED_WHITE);
         forward = (boolean) params[1];
         drivePWM();
         break; }
@@ -254,7 +267,7 @@ void loop() {
     }
    // }
     
-    hasPacket = false;
+
   }
 
   /*if(curbyte == 2) {
@@ -266,9 +279,12 @@ void loop() {
     curbyte == 0;
     numbytes == 999;
   }*/
-  
+
+ // if (idx > 550) {
+ //   goodtogo = true;
+ // }
   updateExternalLED();
-  encPos = (uint32_t) enc.read();
+ // encPos = (uint32_t) enc.read();
 }
 
 uint8_t readData() {
@@ -285,16 +301,24 @@ ISR (SPI_STC_vect)
   data[idx] = SPDR;
   idx++;
   if(idx == 1000) idx = 0;
-  hasPacket = true;
+  //hasPacket = true;
+  //if (data[idx-1] == 255) {
+  //  hasPacket = true;
+  //}
+
   //curbyte++;
   //if(curbyte == 2) {
-  // numbytes = data[idx] + 2;
+  //  numbytes = data[idx-1] + 2;
   //}
   //if(curbyte == numbytes) {
   //  hasPacket = true;
   //  curbyte == 0;
   //  numbytes == 999;
   //}
+}
+
+void waitForByte() {
+  while((idx-ridx) == 0) {}
 }
 
 void drivePWM() {
@@ -319,6 +343,10 @@ void setLED(uint8_t color) {
   } else if (color == LED_BLUE) {
     digitalWrite(led_g, HIGH);
     digitalWrite(led_r, HIGH);
+    digitalWrite(led_b, LOW);
+  } else if (color == LED_WHITE) {
+    digitalWrite(led_g, LOW);
+    digitalWrite(led_r, LOW);
     digitalWrite(led_b, LOW);
   }
 }
