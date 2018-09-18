@@ -66,6 +66,8 @@ boolean hasPacket = false;
 uint8_t numbytes = 999;
 uint8_t curbyte = 0;
 uint8_t data[1000];
+boolean loopback = false;
+uint8_t loopcnt = 0;
 int idx = 0;
 int ridx = 0;
 
@@ -166,7 +168,8 @@ void setup() {
 }
 
 void loop() {
-  if((idx - ridx) > 5) {
+  if(getNumAhead() > 5) {
+    hasPacket = false;
     //hasPacket = false;
     header = readData();
    // delay(250);
@@ -297,28 +300,25 @@ uint8_t readData() {
 // SPI Interrupt Control
 ISR (SPI_STC_vect)
 {
-  // Save received byte, set flag
   data[idx] = SPDR;
   idx++;
-  if(idx == 1000) idx = 0;
-  //hasPacket = true;
-  //if (data[idx-1] == 255) {
-  //  hasPacket = true;
-  //}
-
-  //curbyte++;
-  //if(curbyte == 2) {
-  //  numbytes = data[idx-1] + 2;
-  //}
-  //if(curbyte == numbytes) {
-  //  hasPacket = true;
-  //  curbyte == 0;
-  //  numbytes == 999;
-  //}
+  if(idx == 1000) {
+    idx = 0;
+    loopback = true;
+  }
 }
 
 void waitForByte() {
   while((idx-ridx) == 0) {}
+}
+
+uint8_t getNumAhead() {
+  if(idx > ridx) {
+    return (idx - ridx);
+    loopback = false;
+  } else if ((ridx > idx) && (loopback)) {
+    return ((1000 - ridx) + idx);
+  } 
 }
 
 void drivePWM() {
