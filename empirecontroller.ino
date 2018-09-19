@@ -65,11 +65,11 @@ boolean hasbyte = false;
 boolean hasPacket = false;
 uint8_t numbytes = 999;
 uint8_t curbyte = 0;
-uint8_t data[1000];
-boolean loopback = false;
+volatile uint8_t data[1000];
+volatile boolean loopback = false;
 uint8_t loopcnt = 0;
-int idx = 0;
-int ridx = 0;
+volatile int idx = 0;
+volatile int ridx = 0;
 
 // Encoder variables
 long encPos = 0;
@@ -158,41 +158,26 @@ void setup() {
   SPCR |= _BV(SPE);
   SPCR |= _BV(SPIE);
 
- // for(int i = 0; i < 255; i++) {
- //   digitalWrite(pwm1, 0);
- //   analogWrite(pwm2, i);
- //   delay(250);
- // }
-
-  //delay(5000);
+  updateExternalLED();
+  setLED(LED_BLUE);
 }
 
 void loop() {
-  if(getNumAhead() > 5) {
-    hasPacket = false;
-    //hasPacket = false;
+  if(true) {
+    // Process header
     header = readData();
-   // delay(250);
-    //setLED(LED_RED);
 
     // Extract header data
     fid = (functionId_mask & header) >> 3;
     cid = (componentId_mask & header);
 
-    //delayMicroseconds(1000);
     nparams = readData();
-
-    //uint8_t checksum = header + nparams * 10;
 
     // Extract all parameters
     for (int i = 0; i < nparams; i++) {
-      //delayMicroseconds(1000);
       params[i] = readData();
-      //checksum += params[i] % 10;
     }
-
-    //if(check == checksum) {
-
+    
     // Run function
     switch(fid) {
       case FID_SETPWM: {
@@ -268,29 +253,13 @@ void loop() {
         servo2.write(params[0]);
         break; }
     }
-   // }
-    
+ }
 
-  }
-
-  /*if(curbyte == 2) {
-    numbytes = data[idx] + 2;
-  }
-
-  if(curbyte == numbytes) {
-    hasPacket = true;
-    curbyte == 0;
-    numbytes == 999;
-  }*/
-
- // if (idx > 550) {
- //   goodtogo = true;
- // }
   updateExternalLED();
- // encPos = (uint32_t) enc.read();
 }
 
 uint8_t readData() {
+  waitForByte();
   uint8_t val = data[ridx];
   ridx++;
   if(ridx == 1000) ridx = 0;
@@ -309,13 +278,15 @@ ISR (SPI_STC_vect)
 }
 
 void waitForByte() {
-  while((idx-ridx) == 0) {}
+  while(getNumAhead() == 0) {}
 }
 
 uint8_t getNumAhead() {
   if(idx > ridx) {
     return (idx - ridx);
     loopback = false;
+  } else if (idx == ridx) {
+    return 0;
   } else if ((ridx > idx) && (loopback)) {
     return ((1000 - ridx) + idx);
   } 
